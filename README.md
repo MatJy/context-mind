@@ -1,2 +1,3 @@
-# context-mind
-Local-first AI codebase assistant using RAG, FastAPI, PostgreSQL/pgvector, and Ollama.
+# Context Mind
+
+Local-first AI codebase assistant. Give it your repos, and let the AI help you.
