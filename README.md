@@ -25,15 +25,15 @@ deployment. There is no semantic search endpoint or frontend yet.
 
 ## Technology
 
-| Component | Technology |
-| --- | --- |
-| Backend | Python 3.11+, FastAPI, Pydantic |
-| Persistence | PostgreSQL 17, SQLAlchemy, Alembic |
-| Vector storage | pgvector |
-| Local inference | Ollama |
+| Component               | Technology                               |
+| ----------------------- | ---------------------------------------- |
+| Backend                 | Python 3.11+, FastAPI, Pydantic          |
+| Persistence             | PostgreSQL 17, SQLAlchemy, Alembic       |
+| Vector storage          | pgvector                                 |
+| Local inference         | Ollama                                   |
 | Default embedding model | `nomic-embed-text:v1.5` (768 dimensions) |
-| Tests | pytest, HTTPX |
-| Development database | Docker Compose with a persistent volume |
+| Tests                   | pytest, HTTPX                            |
+| Development database    | Docker Compose with a persistent volume  |
 
 No cloud AI API key is required. Inference runs on the configured Ollama host,
 which defaults to your own computer. Model downloads require internet access.
@@ -78,8 +78,8 @@ Open <http://127.0.0.1:8000/docs> to try the API. To index a repository, use
 
 ```json
 {
-  "path": "C:/path/to/repository",
-  "chunking": {"max_lines": 40, "overlap_lines": 5}
+    "path": "C:/path/to/repository",
+    "chunking": { "max_lines": 40, "overlap_lines": 5 }
 }
 ```
 
@@ -91,13 +91,13 @@ limitations, and troubleshooting, see the [development guide](docs/development.m
 
 ## API
 
-| Endpoint | Purpose |
-| --- | --- |
-| `GET /api/health` | Basic application health |
-| `POST /api/chat` | Standalone Ollama chat without repository context |
-| `POST /api/repositories/scan` | Preview accepted source files |
-| `POST /api/repositories/chunks` | Preview source chunks and line references |
-| `POST /api/repositories/index` | Persist chunks and their local embeddings |
+| Endpoint                        | Purpose                                           |
+| ------------------------------- | ------------------------------------------------- |
+| `GET /api/health`               | Basic application health                          |
+| `POST /api/chat`                | Standalone Ollama chat without repository context |
+| `POST /api/repositories/scan`   | Preview accepted source files                     |
+| `POST /api/repositories/chunks` | Preview source chunks and line references         |
+| `POST /api/repositories/index`  | Persist chunks and their local embeddings         |
 
 ## Tests
 
