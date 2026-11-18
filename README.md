@@ -5,7 +5,7 @@ repositories with references to the relevant source code.
 
 The backend currently scans local repositories, splits source files into chunks,
 and stores the chunks and locally generated embeddings in PostgreSQL with
-pgvector. It also supports standalone chat through Ollama. Repository-aware
+pgvector, and retrieves relevant chunks for questions. It also supports standalone chat through Ollama. Repository-aware
 answers are still in development.
 
 ## Current features
@@ -17,11 +17,13 @@ answers are still in development.
 - Generate embeddings locally through Ollama and store them with pgvector.
 - Reuse embeddings for unchanged content and batch new content for inference.
 - Preserve the previous snapshot if indexing fails.
+- Search an indexed repository with question embeddings and pgvector cosine similarity.
+- Return ranked chunk content with file paths, line ranges, and similarity scores.
 - Send standalone questions to a configurable local Ollama chat model.
 
-**Progress:** phases 0-6 are implemented. Next is semantic retrieval, followed by
-repository-aware answers, evaluation, a React interface, and home-server
-deployment. There is no semantic search endpoint or frontend yet.
+**Progress:** phases 0-7 are implemented. Next is the RAG pipeline for
+repository-aware answers, followed by evaluation, a React interface, and home-server
+deployment. Chat remains standalone; there is no frontend yet.
 
 ## Technology
 
@@ -98,6 +100,18 @@ limitations, and troubleshooting, see the [development guide](docs/development.m
 | `POST /api/repositories/scan`   | Preview accepted source files                     |
 | `POST /api/repositories/chunks` | Preview source chunks and line references         |
 | `POST /api/repositories/index`  | Persist chunks and their local embeddings         |
+| `POST /api/repositories/{id}/search` | Retrieve ranked source chunks for a question |
+
+After indexing, use the returned repository `id` in the search endpoint with:
+
+```json
+{"question": "How is repository indexing implemented?", "top_k": 5}
+```
+
+`top_k` is optional and defaults to `RETRIEVAL_TOP_K` (5); allowed values are 1-20.
+Search returns matching source text and references. Phase 8 will use these matches
+to generate an answer. See the [retrieval guide](docs/development.md#semantic-retrieval-phase-seven)
+for verification and limitations.
 
 ## Tests
 

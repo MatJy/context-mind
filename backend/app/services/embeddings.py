@@ -21,6 +21,8 @@ class EmbeddingProvider(Protocol):
 
     def embed(self, texts: list[str]) -> list[list[float]]: ...
 
+    def embed_query(self, question: str) -> list[float]: ...
+
 
 class EmbeddingUnavailableError(Exception):
     """The local embedding service cannot be reached."""

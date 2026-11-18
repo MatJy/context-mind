@@ -30,13 +30,21 @@ class LocalEmbeddingProvider:
         return sha256(json.dumps(identity, sort_keys=True).encode("utf-8")).hexdigest()
 
     def embed(self, texts: list[str]) -> list[list[float]]:
+        return self._embed(texts, self.document_prefix)
+
+    def embed_query(self, question: str) -> list[float]:
+        """Use the model's query task while keeping the document vector space."""
+        prefix = "search_query: " if self.model.split(":")[0] == "nomic-embed-text" else ""
+        return self._embed([question], prefix)[0]
+
+    def _embed(self, texts: list[str], prefix: str) -> list[list[float]]:
         if not texts:
             return []
         try:
             response = self.client.post(
                 "api/embed", json={
                     "model": self.model,
-                    "input": [self.document_prefix + text for text in texts],
+                    "input": [prefix + text for text in texts],
                     "truncate": False,
                 },
             )

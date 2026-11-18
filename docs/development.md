@@ -323,8 +323,8 @@ chat. Phase six below adds pgvector and embedding generation to this endpoint.
 
 An embedding is a numeric representation of a chunk's meaning. PostgreSQL stores
 these vectors using pgvector so phase seven can compare them with a question's
-vector. This phase generates and stores vectors; semantic retrieval and repository
-context for chat are not implemented yet.
+vector. Phase six generates and stores vectors; phase seven below adds retrieval.
+Repository context for chat comes in phase eight.
 
 The provider interface is independent of Ollama. Its first implementation calls
 local Ollama using HTTPX instead of loading a Python ML framework in the backend.
@@ -374,7 +374,7 @@ replacing weights: changing weights behind the same tag is not detected.
 
 The database `vector` column permits different dimensions; response validation
 enforces the configured dimension for each run. `embedding_key` identifies the
-vector space, which future retrieval must filter by. No similarity index is added
+vector space, which retrieval filters by. No similarity index is added
 in this phase.
 
 Verify in DBeaver or `psql`:
@@ -406,6 +406,58 @@ Keep indexing sequential for each repository.
 Provider details: [Ollama batch embedding API](https://docs.ollama.com/api/embed),
 [Nomic document-prefix guidance](https://huggingface.co/nomic-ai/nomic-embed-text-v1.5),
 and [pgvector installation](https://github.com/pgvector/pgvector#docker).
+
+## Semantic retrieval (phase seven)
+
+Semantic search embeds a question and asks pgvector to rank chunks from one
+indexed repository by cosine distance. A smaller distance means a closer vector
+direction; the response reports `similarity = 1 - distance`, from -1 to 1, with
+higher values first. This is a relevance signal, not a probability of correctness.
+
+No new dependency or migration is required. With PostgreSQL and Ollama running,
+restart the backend and open <http://127.0.0.1:8000/docs>:
+
+1. Index a repository with **POST /api/repositories/index** and copy its `id`.
+2. Execute **POST /api/repositories/{repository_id}/search** with that ID and:
+
+   ```json
+   {"question": "How are unsafe source files excluded?", "top_k": 3}
+   ```
+
+3. Inspect `matches`: each contains exact chunk `content`, `file_path`,
+   `start_line`, `end_line`, and `similarity`. Compare the references with the
+   indexed source snapshot. Matches are ordered by descending similarity, then
+   file path, start line, and chunk ID to break ties.
+4. Omit `top_k` to use `RETRIEVAL_TOP_K` (default **5**). Both the setting and the
+   request allow **1-20**. The question is trimmed and must contain **1-8000**
+   characters. Invalid requests return **422**.
+
+The response also includes `repository_id`, the trimmed `question`, and effective
+`top_k`. An empty indexed repository returns `matches: []` without model inference;
+fewer stored chunks produce fewer matches. Unknown repository IDs return **404**.
+The chat model is not called during search.
+
+The provider has separate document and question embedding operations. Nomic uses
+`search_document: ` for source and `search_query: ` for questions; other models
+receive raw text. Query embeddings use the existing document vector-space identity,
+so phase-six embeddings remain reusable. Search checks the whole snapshot's
+model and embedding key before inference and filters the SQL query by the same
+identity. A model, host, dimensions, or prefix change requires re-indexing; legacy
+or incompatible snapshots return **409** with that instruction. A shared repository
+row lock keeps a concurrent index from replacing chunks during the search.
+
+Missing database configuration and database failures return **503**. Embedding
+connection failures return **503**, timeouts **504**, and invalid vectors or model
+responses **502**. Stop Ollama and search a nonempty compatible repository to
+check connection handling. Changing `EMBEDDING_MODEL`, restarting, and searching
+before re-indexing should return **409**; restore the original setting afterward.
+
+Search uses exact pgvector cosine distance with a SQL limit. No approximate vector
+index or reranking is needed for this MVP phase; exact search may become slower
+as repositories grow. There is no score threshold, so an unrelated question can
+still return the closest chunks. Results describe the last indexed snapshot and
+may repeat overlapping source lines. Answer generation and insufficient-context
+handling belong to phase eight; retrieval quality evaluation belongs to phase nine.
 
 ## Tests
 
@@ -452,6 +504,14 @@ python -m pytest -q tests/test_embedding_integration.py
 Remove-Item Env:RUN_LOCAL_EMBEDDING_INTEGRATION
 ```
 
-It indexes a disposable Git repository, checks real vector storage and reuse,
-simulates an offline provider to verify the saved snapshot survives, checks an
-edit and deletion, and removes only its own temporary repository records.
+The first test indexes a disposable Git repository, checks real question embedding,
+search and source references, vector storage and reuse, failure rollback, and edits
+and deletion. The second uses known vectors in real PostgreSQL to verify cosine
+ranking, top-k limits, scores, and isolation from other repositories and dimensions.
+Both remove only their own temporary repository records.
+
+Retrieval unit tests check query prefixes, unchanged embedding identity, request
+validation, defaults and overrides, missing/empty/incompatible snapshots, invalid
+query vectors, source mapping, safe error statuses, and PostgreSQL query compilation.
+They do not emulate pgvector ranking in SQLite; ranking is checked by the opt-in
+PostgreSQL test above.

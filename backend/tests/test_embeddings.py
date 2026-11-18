@@ -36,6 +36,9 @@ class FakeProvider:
         self.calls.append(texts)
         return [[float(len(text)), 1.0, 0.0] for text in texts]
 
+    def embed_query(self, question: str) -> list[float]:
+        return self.embed([question])[0]
+
 
 def source(content: str, path: str = "main.py") -> SourceChunk:
     return SourceChunk(file_path=path, content=content, start_line=1, end_line=1)
