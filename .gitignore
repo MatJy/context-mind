@@ -18,8 +18,11 @@ __pycache__/
 .coverage.*
 htmlcov/
 coverage.xml
+backend/evaluation/results/
 build/
 dist/
+node_modules/
+*.tsbuildinfo
 
 # Editor and OS files
 .idea/

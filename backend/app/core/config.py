@@ -49,3 +49,4 @@ class Settings(BaseSettings):
     embedding_batch_size: int = Field(default=16, ge=1, le=128)
     embedding_timeout_seconds: float = Field(default=120.0, gt=0, allow_inf_nan=False)
     retrieval_top_k: int = Field(default=5, ge=1, le=20)
+    rag_max_context_characters: int = Field(default=24000, ge=1, le=200000)

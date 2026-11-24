@@ -34,7 +34,7 @@ async def chat(
     body: ChatRequest,
     provider: Annotated[LLMProvider, Depends(get_llm_provider)],
 ) -> ChatResponse:
-    """Generate a plain LLM answer; repository context is added in later phases."""
+    """Generate a standalone answer; repository chat has a separate endpoint."""
     try:
         answer = await provider.generate(body.question)
     except LLMUnavailableError as exc:

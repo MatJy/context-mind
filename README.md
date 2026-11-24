@@ -5,8 +5,8 @@ repositories with references to the relevant source code.
 
 The backend currently scans local repositories, splits source files into chunks,
 and stores the chunks and locally generated embeddings in PostgreSQL with
-pgvector, and retrieves relevant chunks for questions. It also supports standalone chat through Ollama. Repository-aware
-answers are still in development.
+pgvector, retrieves relevant chunks for questions, and generates repository-aware
+answers with source references through Ollama. It also supports standalone chat.
 
 ## Current features
 
@@ -19,11 +19,13 @@ answers are still in development.
 - Preserve the previous snapshot if indexing fails.
 - Search an indexed repository with question embeddings and pgvector cosine similarity.
 - Return ranked chunk content with file paths, line ranges, and similarity scores.
+- Generate answers from bounded retrieved context with numbered source references.
 - Send standalone questions to a configurable local Ollama chat model.
 
-**Progress:** phases 0-7 are implemented. Next is the RAG pipeline for
-repository-aware answers, followed by evaluation, a React interface, and home-server
-deployment. Chat remains standalone; there is no frontend yet.
+**Progress:** phases 0-10 are implemented, including a minimal React interface for
+indexing repositories and asking questions with source references. A fixed-corpus
+evaluation runner separates retrieval, answer quality, and hallucination checks.
+Full-stack Dockerization is the next phase.
 
 ## Technology
 
@@ -35,6 +37,7 @@ deployment. Chat remains standalone; there is no frontend yet.
 | Local inference         | Ollama                                   |
 | Default embedding model | `nomic-embed-text:v1.5` (768 dimensions) |
 | Tests                   | pytest, HTTPX                            |
+| Frontend                | React, TypeScript, Vite, Vitest           |
 | Development database    | Docker Compose with a persistent volume  |
 
 No cloud AI API key is required. Inference runs on the configured Ollama host,
@@ -88,6 +91,28 @@ Open <http://127.0.0.1:8000/docs> to try the API. To index a repository, use
 The database is available on `localhost:5433`. Keep the API bound to localhost
 while using these unauthenticated local-file endpoints.
 
+### Frontend
+
+Requires Node.js 22.12+ (Node 24 LTS recommended) and npm. With the API running on
+`127.0.0.1:8000`, open a second terminal:
+
+```powershell
+Set-Location frontend
+npm ci
+npm run dev
+```
+
+Open <http://127.0.0.1:5173>. Enter an absolute Git repository path on the backend
+machine, click **Index repository**, then ask a question. Repositories indexed in
+this page session appear in the selector. Refreshing clears the selector; indexing
+the same path again reuses unchanged embeddings. Re-index after source edits.
+The page displays progress, service errors, the answer, and numbered source lines.
+
+Vite proxies `/api` requests to FastAPI, keeping browser requests on one origin.
+Both development servers bind to localhost. No cloud API key is needed.
+See the [frontend guide](docs/development.md#react-frontend-phase-ten) for checks
+and limitations.
+
 For Linux/macOS commands, configuration options, native PostgreSQL setup,
 limitations, and troubleshooting, see the [development guide](docs/development.md).
 
@@ -101,6 +126,7 @@ limitations, and troubleshooting, see the [development guide](docs/development.m
 | `POST /api/repositories/chunks` | Preview source chunks and line references         |
 | `POST /api/repositories/index`  | Persist chunks and their local embeddings         |
 | `POST /api/repositories/{id}/search` | Retrieve ranked source chunks for a question |
+| `POST /api/repositories/{id}/chat` | Generate a repository-grounded answer with sources |
 
 After indexing, use the returned repository `id` in the search endpoint with:
 
@@ -109,11 +135,20 @@ After indexing, use the returned repository `id` in the search endpoint with:
 ```
 
 `top_k` is optional and defaults to `RETRIEVAL_TOP_K` (5); allowed values are 1-20.
-Search returns matching source text and references. Phase 8 will use these matches
-to generate an answer. See the [retrieval guide](docs/development.md#semantic-retrieval-phase-seven)
-for verification and limitations.
+Search returns matching source text and references. Send the same body to
+`POST /api/repositories/{id}/chat` to generate an answer with a `sources` list of
+`source_id`, `file_path`, `start_line`, and `end_line`. Citations such as `[1]`
+refer to these source IDs. See the [RAG guide](docs/development.md#rag-pipeline-phase-eight)
+for manual verification and limitations.
 
 ## Tests
+
+Frontend checks, from `frontend`:
+
+```powershell
+npm test
+npm run build
+```
 
 With the virtual environment activated:
 
@@ -129,5 +164,6 @@ opt-in [local integration test](docs/development.md#tests).
 ## Documentation
 
 - [Development guide](docs/development.md): setup, settings, API behavior, and verification.
+- [Evaluation guide](docs/evaluation.md): fixed questions, local runner, scoring, and known limitations.
 - [Project instructions](PROJECT_AGENT_INSTRUCTIONS.md): scope, architecture constraints, and implementation phases.
 - [Future ideas](docs/future-ideas.md): possibilities outside the current implementation.

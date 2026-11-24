@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "shipping_threshold",
+      "kind": "direct",
+      "question": "At what subtotal does shipping become free, and what is the shipping fee below it?",
+      "evidence": [{"file_path": "shipping.py", "start_line": 3, "end_line": 10}],
+      "fact_patterns": ["\\b50\\b", "\\b5\\b", "\\bfree\\b|\\bzero\\b|\\b0\\b"],
+      "forbidden_patterns": [
+        "(?:threshold|free shipping) (?:is|starts at) (?:100|60)\\b",
+        "[$€£]|\\b(?:dollars?|euros?|pounds?)\\b"
+      ]
+    },
+    {
+      "id": "order_total",
+      "kind": "multiple_files",
+      "question": "How does order_total use shipping_fee, and what total does a subtotal of 40 produce?",
+      "evidence": [
+        {"file_path": "orders.py", "start_line": 3, "end_line": 7},
+        {"file_path": "shipping.py", "start_line": 3, "end_line": 10}
+      ],
+      "fact_patterns": ["order_total", "shipping_fee", "\\b45\\b"],
+      "forbidden_patterns": [
+        "\\b(?:total|result) (?:is|of|equals) (?:40|50)\\b(?!\\s*(?:[+*/-]|plus\\b|minus\\b))",
+        "[$€£]|\\b(?:dollars?|euros?|pounds?)\\b"
+      ]
+    },
+    {
+      "id": "absent_payment_storage",
+      "kind": "unanswerable",
+      "question": "Which database stores customers' payment card numbers and how are those numbers encrypted?",
+      "evidence": [],
+      "fact_patterns": [],
+      "forbidden_patterns": [
+        "(?:uses?|stored? in|encrypted? (?:with|using)) (?:a |the )?(?:postgresql|redis|mysql|aes)",
+        "(?:postgresql|redis|mysql) (?:stores?|database stores?)"
+      ]
+    }
+  ]
+}

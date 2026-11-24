@@ -324,7 +324,7 @@ chat. Phase six below adds pgvector and embedding generation to this endpoint.
 An embedding is a numeric representation of a chunk's meaning. PostgreSQL stores
 these vectors using pgvector so phase seven can compare them with a question's
 vector. Phase six generates and stores vectors; phase seven below adds retrieval.
-Repository context for chat comes in phase eight.
+Repository context for chat is covered in phase eight below.
 
 The provider interface is independent of Ollama. Its first implementation calls
 local Ollama using HTTPX instead of loading a Python ML framework in the backend.
@@ -457,7 +457,143 @@ index or reranking is needed for this MVP phase; exact search may become slower
 as repositories grow. There is no score threshold, so an unrelated question can
 still return the closest chunks. Results describe the last indexed snapshot and
 may repeat overlapping source lines. Answer generation and insufficient-context
-handling belong to phase eight; retrieval quality evaluation belongs to phase nine.
+handling are described below; retrieval quality evaluation belongs to phase nine.
+
+## RAG pipeline (phase eight)
+
+RAG (retrieval-augmented generation) gives the LLM relevant indexed source chunks
+alongside the question. The backend first uses the existing question embedding
+and pgvector search, builds a bounded prompt, then calls the existing LLM provider.
+The provider interface stays independent of the model vendor. No dependency,
+migration, cloud service, or API key is added.
+
+With PostgreSQL, migrations, and both Ollama models ready as described above:
+
+1. Restart the backend and open <http://127.0.0.1:8000/docs>.
+2. Index a repository with **POST /api/repositories/index** and copy its `id`.
+3. Execute **POST /api/repositories/{repository_id}/chat** with that ID:
+
+   ```json
+   {"question": "How are unsafe source files excluded?", "top_k": 3}
+   ```
+
+4. Inspect the generated `answer` and compare its citations to `sources`:
+
+   ```json
+   {
+     "repository_id": 1,
+     "answer": "The scanner excludes environment files and private keys [1].",
+     "sources": [
+       {"source_id": 1, "file_path": "backend/app/services/repository.py", "start_line": 1, "end_line": 40}
+     ]
+   }
+   ```
+
+   This is an illustrative shape; actual wording and ranges depend on the index
+   and model. Source IDs start at one and match the prompt's numbered chunks.
+   Line ranges are inclusive and refer to the indexed snapshot. Re-index after
+   edits before comparing with current files.
+
+5. Ask about behavior absent from the retrieved source. Check that the model
+   states that repository context is insufficient instead of inventing files.
+   An empty indexed repository always returns an insufficient-context answer
+   and `sources: []` without calling either model.
+6. Stop the chat model service or use an unavailable configured chat model and
+   repeat a question against a nonempty repository. Connection failures return
+   **503**, timeouts **504**, and unsuccessful/malformed model responses **502**.
+
+Questions and `top_k` follow semantic search validation: trimmed questions of
+1-8000 characters, optional integer `top_k` of 1-20, and `RETRIEVAL_TOP_K` as the
+default. Unknown repositories return **404**, incompatible embedding snapshots
+**409**, and database/embedding failures preserve the search endpoint's statuses.
+The standalone **POST /api/chat** endpoint retains its original behavior.
+
+`RAG_MAX_CONTEXT_CHARACTERS` limits serialized source context, including source
+metadata and JSON escaping. Its default is **24000**, with allowed values
+**1-200000**. Whole chunks are considered in retrieval order; oversized chunks
+are skipped so their line references remain accurate. Smaller subsequent chunks
+can still fit. Only included chunks appear in `sources`. If none fit, the backend
+returns the insufficient-context answer without calling the LLM. Lower chunk
+sizes or adjust the budget if useful chunks are regularly omitted.
+
+A character budget avoids a model-specific tokenizer dependency, but is not a
+token guarantee. Choose a budget that leaves room for prompt instructions, the
+question, and generated output in your model's context window. The retrieval
+transaction ends before LLM generation so a slow answer does not hold the shared
+repository lock or database connection throughout inference.
+
+The prompt tells the model to use only supplied context, cite supplied source
+IDs, preserve file/line references, and acknowledge missing evidence. Source and
+question text are JSON-quoted and explicitly treated as untrusted data. These
+instructions reduce risk but cannot guarantee grounding or prevent all prompt
+injection. Returned sources are backend-controlled evidence supplied to the
+model, not a verified list of claims used by it. Generated prose and citations
+are not automatically checked or rewritten. Exact top-k retrieval can return
+unrelated chunks, and a nonempty context's sufficiency remains a model judgment.
+The [phase-nine evaluation guide](evaluation.md) provides fixed questions,
+separate retrieval and generation checks, and a manual correctness rubric.
+
+RAG tests cover the question-to-retrieval-to-Ollama HTTP path using simulated
+database query results and HTTP transport, source provenance, default/override
+top-k, empty/oversized context, JSON quoting, input validation, error statuses,
+and releasing the retrieval transaction before generation. They require no live
+services and do not establish real-model answer quality; use the manual checks
+above for that.
+
+## React frontend (phase ten)
+
+The minimal React/TypeScript UI calls the existing repository index and RAG chat
+endpoints. Vite provides the development server and proxies relative `/api`
+requests to `http://127.0.0.1:8000`; no backend CORS configuration is needed.
+React renders generated answers as plain text, preserving whitespace without
+interpreting model-generated HTML or Markdown. Source IDs and inclusive line
+ranges are displayed alongside the answer, referring to the indexed snapshot.
+
+Install Node.js 22.12+ (Node 24 LTS recommended). Start PostgreSQL, Ollama,
+migrations, and FastAPI using the setup above. In a separate terminal:
+
+```powershell
+Set-Location frontend
+npm ci
+npm run dev
+```
+
+Open <http://127.0.0.1:5173>. The path must be an absolute Git working tree path
+on the backend machine; a browser folder picker cannot supply that server path.
+Indexing uses the backend's default chunk sizes and embedding configuration;
+questions use its default retrieval top-k. These can still be changed through
+the existing API/configuration when needed.
+
+Manual verification:
+
+1. Enter a disposable repository path and click **Index repository**. Confirm
+   loading controls are disabled, then check chunk/reuse counts and skipped files.
+2. Ask a question whose answer exists in the repository. Compare numbered sources
+   and line ranges against the indexed files. Ask an absent-context question too.
+3. Index a second repository and switch between the two. Answers clear when
+   indexing or switching so old answers are not shown under a different selection.
+4. Edit a source and re-index its path. Confirm the selector has one entry for that
+   repository, counts update, and answers use the new snapshot.
+5. Enter an invalid path; confirm a readable error and retry. Stop Ollama and ask
+   against a nonempty repository to check service errors and re-enabled controls.
+6. Refresh the page and index the same path. The database persists snapshots,
+   while the browser's session selection resets; unchanged embeddings are reused.
+7. Narrow the viewport and navigate using Tab to check labels and focus indicators.
+
+From `frontend`, run `npm test` for isolated UI tests with mocked HTTP responses,
+and `npm run build` for TypeScript checking and a production build in `dist/`.
+Tests cover request bodies and repository IDs, answers/sources, empty references,
+literal HTML display, progress controls, repository switching, errors, and retry.
+They require no live backend or models. `npm run preview` serves the build locally
+and also proxies to the running API; it is a verification tool, not deployment.
+Full-stack containers and hosting remain phase eleven.
+
+There is no stored browser history or repository-list endpoint. Selection is
+limited to repositories indexed during this page session. Requests are synchronous
+from the user's perspective with a loading indicator; there is no percentage
+progress, streaming, or cancellation. Large repositories/local models can be slow.
+Controls remain locked until the request completes. Keep the unauthenticated
+development servers bound to localhost.
 
 ## Tests
 
